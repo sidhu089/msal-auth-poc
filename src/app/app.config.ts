@@ -10,7 +10,28 @@ import {
 import { PublicClientApplication, LogLevel } from '@azure/msal-browser';
 import { MsalGuardConfiguration } from '@azure/msal-angular';
 
-// Import session persistence library services
+// ============================================================================
+// Session Persistence Library Imports
+// ============================================================================
+// The @svt_089/angular-msal-session-persistence library provides enhanced session
+// management capabilities for MSAL-authenticated Angular applications:
+//
+// - IdleDetectionService: Monitors user activity (mouse, keyboard, touch, scroll,
+//   visibility, focus) and emits events when idle timeout is exceeded. Enables
+//   proactive session timeout warnings and automatic re-authentication flows.
+//
+// - MsalAuthService: Wrapper service simplifying MSAL authentication operations
+//   (loginPopup, logoutPopup, token acquisition) with built-in error handling
+//   and fallback mechanisms.
+//
+// - FormLifecycleService: Tracks and manages form state across the application.
+//   Provides saveAllForms() and restoreAllForms() methods to persist and restore
+//   form data during authentication boundaries (e.g., before/after re-authentication).
+//
+// These services work together to create a seamless user experience where form
+// data is automatically preserved when users need to re-authenticate due to
+// session timeouts or idle detection.
+// ============================================================================
 import {
   IdleDetectionService,
   MsalAuthService,
@@ -26,7 +47,16 @@ export const appConfig: ApplicationConfig = {
     MsalService,
     MsalGuard,
     MsalBroadcastService,
-    // Add session persistence services
+    // ==========================================================================
+    // Register Session Persistence Services as Angular Injectables
+    // ==========================================================================
+    // These services are provided at the application level so they can be
+    // injected into any component. They maintain singleton state across the
+    // app lifecycle:
+    // - IdleDetectionService: Single instance monitors all user activity
+    // - MsalAuthService: Centralized authentication wrapper
+    // - FormLifecycleService: Global form state registry
+    // ==========================================================================
     IdleDetectionService,
     MsalAuthService,
     FormLifecycleService,
@@ -40,6 +70,18 @@ export const appConfig: ApplicationConfig = {
             redirectUri: 'http://localhost:4200'
           },
           cache: {
+            // ===============================================================
+            // Session Storage Configuration
+            // ===============================================================
+            // Using sessionStorage (instead of localStorage) ensures that:
+            // 1. Authentication state is cleared when the browser tab is closed
+            // 2. Each tab maintains independent authentication state
+            // 3. Better security posture for sensitive authentication tokens
+            //
+            // This is the recommended approach for SPAs with session management
+            // requirements, as it aligns with the session persistence library's
+            // use of sessionStorage for form state.
+            // ===============================================================
             cacheLocation: 'sessionStorage',
             storeAuthStateInCookie: false
           },

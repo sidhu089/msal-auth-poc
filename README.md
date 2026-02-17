@@ -1,6 +1,6 @@
 # Angular MSAL Authentication POC
 
-This is a proof-of-concept application demonstrating how to implement Microsoft Authentication Library (MSAL) authentication in an Angular single-page application (SPA) with a sample form.
+This is a proof-of-concept application demonstrating how to implement Microsoft Authentication Library (MSAL) authentication in an Angular single-page application (SPA) with integrated session persistence and idle detection capabilities.
 
 ## Features
 
@@ -9,6 +9,156 @@ This is a proof-of-concept application demonstrating how to implement Microsoft 
 - Sample form accessible only to authenticated users
 - User profile information display
 - Login and logout functionality
+- **Automatic form state persistence** - Form data is automatically saved to sessionStorage and restored after re-authentication
+- **Idle detection with session timeout management** - Detects user inactivity and prompts for re-authentication
+- **Seamless session recovery** - Preserves user work across authentication boundaries
+
+## Session Persistence Library: `@svt_089/angular-msal-session-persistence`
+
+This application integrates a custom session persistence library designed to enhance the MSAL authentication experience by maintaining user session state and form data across authentication boundaries.
+
+### Purpose and Architecture
+
+The `@svt_089/angular-msal-session-persistence` library provides four core services that work together to create a seamless authentication experience:
+
+#### 1. **`MsalAuthService`** - Authentication Wrapper Service
+   - **Purpose**: Provides a simplified interface for MSAL authentication operations (login, logout, token acquisition)
+   - **Key Features**:
+     - Wraps MSAL's popup and redirect authentication flows
+     - Manages active account state
+     - Handles token acquisition with automatic fallback from silent to interactive methods
+   - **Usage in this POC**: Injected in `app.ts` to handle re-authentication when idle timeout occurs
+
+#### 2. **`IdleDetectionService`** - User Activity Monitoring
+   - **Purpose**: Monitors user activity across multiple signals (mouse, keyboard, touch, scroll, visibility, focus) to detect idle states
+   - **Key Features**:
+     - Configurable idle timeout threshold
+     - Rich event context including timestamps, elapsed time, and metadata
+     - Emits events via `onIdleEvent$` observable with `IdleEventType` enumeration:
+       - `IDLE_WARNING`: Approaching timeout threshold
+       - `TIMEOUT_EXCEEDED`: Idle timeout reached
+       - `USER_RETURNED`: User returned before timeout
+       - `SESSION_EXPIRED`: Session expired after timeout
+     - Automatic cleanup and resource management
+   - **Usage in this POC**: 
+     - Configured in `app.ts` with a 10-second timeout (for demo purposes)
+     - Subscribes to `TIMEOUT_EXCEEDED` events to show the idle dialog
+     - Resets timer after successful re-authentication
+
+#### 3. **`FormLifecycleService`** - Form State Management
+   - **Purpose**: Tracks and manages the lifecycle state of forms throughout the application
+   - **Key Features**:
+     - Registers forms with unique IDs
+     - Tracks form dirty state, validation status, and submission state
+     - Provides `saveAllForms()` method to persist form state before authentication events
+     - Provides `restoreAllForms()` method to restore form state after re-authentication
+   - **Usage in this POC**: Called in `app.ts` before re-authentication to save all form states
+
+#### 4. **`AutoPersistFormDirective`** - Automatic Form Persistence
+   - **Purpose**: Structural directive that automatically persists and restores form data using sessionStorage
+   - **Key Features**:
+     - Applies to `<form>` elements with a required `formId` attribute
+     - Automatically saves form value on every value change (debounced)
+     - Restores form state on initialization if persisted data exists
+     - Clears persisted data after successful form submission
+     - Integrates with Angular's `FormGroup` for reactive forms
+   - **Usage in this POC**: Applied to forms in `form.component.ts` to enable automatic persistence
+   - **How it works**:
+     ```typescript
+     // In form.component.ts - import the directive
+     import { AutoPersistFormDirective } from '@svt_089/angular-msal-session-persistence';
+
+     // Add to imports array
+     imports: [AutoPersistFormDirective]
+
+     // Apply to form template with unique formId
+     <form [formGroup]="sampleForm" formId="form1" autoPersistForm>
+     ```
+
+#### 5. **`NavigationTrackerService`** - Navigation State Tracking
+   - **Purpose**: Tracks navigation events and maintains navigation history
+   - **Key Features**:
+     - Monitors route changes and navigation events
+     - Stores navigation context for session recovery
+   - **Usage in this POC**: Injected in `app.ts` for potential navigation state restoration
+
+### Data Flow: Idle Detection → Re-authentication → Form Restoration
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ 1. User fills out form                                          │
+│    → AutoPersistFormDirective saves to sessionStorage          │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│ 2. IdleDetectionService detects inactivity (10 seconds)         │
+│    → Emits TIMEOUT_EXCEEDED event                               │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│ 3. Idle dialog shown in app.ts                                  │
+│    → Displays idle duration, last active time, forms saved      │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│ 4. User clicks "Stay Signed In"                                 │
+│    → formLifecycle.saveAllForms() called                        │
+│    → authService.loginPopup() triggers re-authentication        │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│ 5. After successful re-authentication                           │
+│    → idleService.reset() resets idle timer                      │
+│    → AutoPersistFormDirective restores form from sessionStorage│
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Session Storage Structure
+
+The library uses sessionStorage to persist data with the following key structure:
+
+- **Form Data**: `sessionpersist_form_{formId}` - Stores serialized form values
+- **Form Metadata**: `sessionpersist_meta_{formId}` - Stores form state metadata
+- **Navigation State**: `sessionpersist_nav_state` - Stores navigation history
+
+### Configuration Example
+
+```typescript
+// In app.config.ts - Register services as providers
+import {
+  IdleDetectionService,
+  MsalAuthService,
+  FormLifecycleService,
+  NavigationTrackerService
+} from '@svt_089/angular-msal-session-persistence';
+
+export const appConfig: ApplicationConfig = {
+  providers: [
+    IdleDetectionService,
+    MsalAuthService,
+    FormLifecycleService,
+    NavigationTrackerService,
+    // ... other providers
+  ]
+};
+
+// In app.ts - Configure idle detection
+ngOnInit() {
+  this.idleService.configure({
+    idleTimeoutSeconds: 900, // 15 minutes
+    enableLogging: false
+  });
+
+  this.subscription = this.idleService.onIdleEvent$
+    .pipe(filter(e => e.type === IdleEventType.TIMEOUT_EXCEEDED))
+    .subscribe((event) => {
+      this.currentIdleEvent = event;
+      this.showIdleDialog = true;
+    });
+
+  this.idleService.start();
+}
+```
 
 ## Prerequisites
 

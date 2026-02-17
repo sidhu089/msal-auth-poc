@@ -2,6 +2,35 @@ import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AuthService } from '../services/auth.service';
+
+// ============================================================================
+// AutoPersistFormDirective - Automatic Form State Persistence
+// ============================================================================
+// This directive from @svt_089/angular-msal-session-persistence provides
+// automatic form state persistence and restoration capabilities:
+//
+// HOW IT WORKS:
+// 1. Apply the directive to a <form> element with a unique formId attribute
+// 2. The directive automatically watches for form value changes (debounced)
+// 3. On each change, it serializes the form value and saves to sessionStorage
+//    with key: 'sessionpersist_form_{formId}'
+// 4. On component initialization, it reads from sessionStorage and restores
+//    the form value if previously saved data exists
+// 5. After successful form submission, manually clear the persisted data
+//
+// BENEFITS:
+// - Prevents data loss during page refresh, browser crashes, or session timeouts
+// - Seamlessly restores form state after re-authentication flows
+// - No manual save/restore code needed in component logic
+// - Works transparently with Angular's reactive forms
+//
+// USAGE:
+// <form [formGroup]="myForm" formId="uniqueFormId" autoPersistForm>
+//   ... form controls ...
+// </form>
+//
+// NOTE: The formId attribute is REQUIRED and must be unique per form
+// ============================================================================
 import { AutoPersistFormDirective } from '@svt_089/angular-msal-session-persistence';
 
 @Component({
@@ -16,7 +45,29 @@ import { AutoPersistFormDirective } from '@svt_089/angular-msal-session-persiste
       <!-- Form 1 -->
       <div class="form-section">
         <h3>Form 1</h3>
-        <form [formGroup]="sampleForm" id="form1" (ngSubmit)="onSubmit()" class="sample-form">
+        <!--
+          ================================================================
+          Auto-Persisting Form with AutoPersistFormDirective
+          ================================================================
+          - formId="form1": Unique identifier used as sessionStorage key suffix
+          - autoPersistForm: Directive attribute that enables automatic persistence
+          
+          When user types in any field:
+          1. Directive detects value change (debounced to avoid excessive writes)
+          2. Serializes form value to JSON
+          3. Saves to sessionStorage under 'sessionpersist_form_form1'
+          
+          When component initializes:
+          1. Directive checks sessionStorage for 'sessionpersist_form_form1'
+          2. If found, patches the form with saved values
+          3. Form appears pre-filled with user's previous input
+          
+          After submission (see onSubmit method):
+          1. Persisted data is manually cleared from sessionStorage
+          2. Next form load starts fresh
+          ================================================================
+        -->
+        <form [formGroup]="sampleForm" formId="form1" autoPersistForm (ngSubmit)="onSubmit()" class="sample-form">
           <div class="form-group">
             <label for="name1">Name:</label>
             <input
@@ -82,7 +133,19 @@ import { AutoPersistFormDirective } from '@svt_089/angular-msal-session-persiste
       <!-- Form 2 -->
       <div class="form-section">
         <h3>Form 2</h3>
-        <form [formGroup]="sampleForm1" id="form2" (ngSubmit)="onSubmit1()" class="sample-form">
+        <!--
+          ================================================================
+          Second Auto-Persisting Form with Unique formId
+          ================================================================
+          - formId="form2": Different identifier creates separate sessionStorage entry
+          - Each form maintains independent persisted state
+          - Key: 'sessionpersist_form_form2'
+          
+          This demonstrates that multiple forms can coexist with the
+          AutoPersistFormDirective, each with their own persistence lifecycle.
+          ================================================================
+        -->
+        <form [formGroup]="sampleForm1" formId="form2" autoPersistForm (ngSubmit)="onSubmit1()" class="sample-form">
           <div class="form-group">
             <label for="name2">Name:</label>
             <input
@@ -236,6 +299,7 @@ export class FormComponent implements OnInit {
     private fb: FormBuilder,
     private authService: AuthService
   ) {
+    // Initialize Form 1 with validation rules
     this.sampleForm = this.fb.group({
       name: ['', Validators.required],
       email: ['', [Validators.required, Validators.email]],
@@ -243,7 +307,8 @@ export class FormComponent implements OnInit {
       comments: [''],
       agreement: [false, Validators.requiredTrue]
     });
-    
+
+    // Initialize Form 2 with same validation rules (independent instance)
     this.sampleForm1 = this.fb.group({
       name: ['', Validators.required],
       email: ['', [Validators.required, Validators.email]],
@@ -259,8 +324,23 @@ export class FormComponent implements OnInit {
     if (account) {
       this.username = account.name || account.username || 'User';
     }
+
+    // NOTE: Form restoration is handled automatically by AutoPersistFormDirective
+    // No manual restoration code needed here. The directive:
+    // 1. Detects form initialization
+    // 2. Reads from sessionStorage using formId
+    // 3. Patches form value if saved data exists
   }
 
+  /**
+   * Handles Form 1 submission.
+   * 
+   * On successful submission:
+   * 1. Stores form data for display in success message
+   * 2. Clears persisted form data from sessionStorage
+   *    (prevents stale data on next form load)
+   * 3. In production: would send data to backend API
+   */
   onSubmit() {
     if (this.sampleForm.valid) {
       this.formData = this.sampleForm.value;
@@ -270,7 +350,16 @@ export class FormComponent implements OnInit {
       // Here you would typically send the data to your backend API
       // For demo purposes, we're just showing the data in the UI
 
-      // Clear the persisted form data after successful submission
+      // ===============================================================
+      // Clear Persisted Form Data After Successful Submission
+      // ===============================================================
+      // The AutoPersistFormDirective saves form state automatically,
+      // but we must manually clear it after successful submission
+      // to prevent stale data from appearing on next form load.
+      //
+      // Key format: 'sessionpersist_form_{formId}'
+      // For Form 1: 'sessionpersist_form_form1'
+      // ===============================================================
       sessionStorage.removeItem('sessionpersist_form_form1');
     } else {
       console.log('Form 1 is invalid');
@@ -279,6 +368,12 @@ export class FormComponent implements OnInit {
     }
   }
 
+  /**
+   * Handles Form 2 submission.
+   * 
+   * Same logic as onSubmit() but for the second form with its own
+   * independent persisted state.
+   */
   onSubmit1() {
     if (this.sampleForm1.valid) {
       this.formData1 = this.sampleForm1.value;
@@ -288,7 +383,12 @@ export class FormComponent implements OnInit {
       // Here you would typically send the data to your backend API
       // For demo purposes, we're just showing the data in the UI
 
-      // Clear the persisted form data after successful submission
+      // ===============================================================
+      // Clear Persisted Form Data After Successful Submission
+      // ===============================================================
+      // Key format: 'sessionpersist_form_{formId}'
+      // For Form 2: 'sessionpersist_form_form2'
+      // ===============================================================
       sessionStorage.removeItem('sessionpersist_form_form2');
     } else {
       console.log('Form 2 is invalid');
