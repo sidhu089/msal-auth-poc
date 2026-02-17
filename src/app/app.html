@@ -1,0 +1,17 @@
+<div class="app-container">
+  <header>
+    <h1>{{ title() }} - MSAL Authentication Demo</h1>
+  </header>
+  
+  <main>
+    <router-outlet />
+
+<!-- Custom idle dialog with rich event data -->
+@if(showIdleDialog && currentIdleEvent) {
+  <app-idle-dialog
+    [event]="currentIdleEvent"
+    (decision)="onIdleDialogDecision($event)">
+  </app-idle-dialog>
+}
+  </main>
+</div>
